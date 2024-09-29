@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat App</title>
+</head>
+<body>
+
+<p><a href="{% url 'show_completions' %}">View Completions</a></p>
+    <div id="chat-box">
+        <!-- Chat messages will be displayed here -->
+    </div>
+    <input type="text" id="user-input" placeholder="Type your message here...">
+    <button id="send-btn">Send</button>
+
+    <input type="hidden" id="csrf-token" value="{% csrf_token %}"> <!-- CSRF token -->
+    <p id="bot-responses"></p> <!-- New paragraph tag for bot responses -->
+
+<!-- Button to clear session data -->
+<button id="clear-session-btn">Clear Session Data</button>
+    <script>
+        const chatBox = document.getElementById('chat-box');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const clearSessionBtn = document.getElementById('clear-session-btn'); // New button
+
+
+        // Function to display messages in the chat box
+        function displayMessage(message) {
+            const messageElement = document.createElement('div');
+            messageElement.innerText = message;
+            chatBox.appendChild(messageElement);
+        }
+
+// Function to append bot responses to the <p> tag
+function appendBotResponse(response) {
+    const botResponses = document.getElementById('bot-responses');
+    if (response.trim() !== '') { // Check if response is not empty
+        if (response.trim() === '__END_OF_RESPONSES__') {
+            botResponses.innerHTML += '<br>'; // Replace __END_OF_RESPONSES__ with a line break
+        } else {
+            if (botResponses.innerText.trim() === '') { // Check if botResponses is empty
+                botResponses.innerText += response.trim(); // Append response without space if empty
+            } else {
+                botResponses.innerHTML += ' ' + response.trim(); // Append response with space if not empty
+            }
+        }
+    }
+}
+
+
+        // Function to send user input to the server and receive responses
+        async function sendMessage() {
+            const userMessage = userInput.value.trim();
+            console.log(userMessage);
+            if (userMessage !== '') {
+                displayMessage(`You: ${userMessage}`);
+                userInput.value = '';
+
+                // Get CSRF token from the hidden input field
+                const csrfToken = document.getElementById('csrf-token').value;
+
+                // Send user message to the server with CSRF token
+                const response = await fetch('/stream/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken // Include CSRF token in the headers
+                    },
+                    body: JSON.stringify({ message: userMessage })
+                });
+
+                if (response.ok) {
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder('utf-8');
+
+                    let partialData = ''; // Initialize partialData to accumulate JSON strings
+                    while (true) {
+                        const { done, value } = await reader.read();
+
+                        if (done) break;
+
+                        const chunk = decoder.decode(value, { stream: true });
+                        console.log(chunk, "chnkkk")
+                        partialData += chunk;
+
+                        // Split the data by newlines and process each line as JSON
+                        const lines = partialData.split('\n');
+                        //console.log(lines , "lines")
+                        console.log(lines.length)
+                        for (let i = 0; i < lines.length - 1; i++) {
+                            const line = lines[i];
+                            //console.log(line, "line")
+                            try {
+                                const json = JSON.parse(line);
+                                const completion = json.completion;
+                                console.log(completion, "final data")
+                                if (completion !== '') {
+                                    appendBotResponse(completion); // Append the bot response to the <p> tag
+                                }
+                            } catch (error) {
+                                console.error('Error parsing JSON:', error);
+                            }
+                        }
+
+                        // Update partialData with the remaining incomplete line
+                        partialData = lines[lines.length - 1];
+                    }
+                } else {
+                    console.error('Failed to get response from server');
+                }
+            }
+        }
+
+        async function clearSessionData(){
+            const response = await fetch ('/end-session/', {
+             method: "GET"
+             });
+
+             if (response.ok){
+                console.log("Session data cleared");
+
+                } else {
+                    console.error("Mission failed");
+                    }
+             }
+
+        sendBtn.addEventListener('click', sendMessage);
+        clearSessionBtn.addEventListener('click', clearSessionData);
+    </script>
+
+</body>
+</html>
+
+
+
